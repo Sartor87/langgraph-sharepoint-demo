@@ -11,7 +11,8 @@ from __future__ import annotations
 import os
 from functools import partial
 
-from langchain_openai import AzureChatOpenAI
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
@@ -23,12 +24,32 @@ from app.schemas.state import AuditState
 DEFAULT_MAX_ITERATIONS = 3
 
 
-def _build_llm() -> AzureChatOpenAI:
+def _build_llm() -> BaseChatModel:
+    foundry_endpoint = os.environ.get("FOUNDRY_PROJECT_ENDPOINT")
+    if foundry_endpoint:
+        return _build_foundry_llm(foundry_endpoint)
+
     return AzureChatOpenAI(
         azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
         azure_deployment=os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1"),
         api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-12-01-preview"),
         temperature=0,
+    )
+
+
+def _build_foundry_llm(foundry_endpoint: str) -> ChatOpenAI:
+    from azure.ai.projects import AIProjectClient
+    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
+    credential = DefaultAzureCredential()
+    project = AIProjectClient(endpoint=foundry_endpoint.rstrip("/"), credential=credential)
+    openai_client = project.get_openai_client()
+    token_provider = get_bearer_token_provider(credential, "https://ai.azure.com/.default")
+
+    return ChatOpenAI(
+        model=os.environ.get("FOUNDRY_MODEL_NAME", "gpt-4.1"),
+        base_url=str(openai_client.base_url),
+        api_key=token_provider,
     )
 
 
