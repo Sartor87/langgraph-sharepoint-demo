@@ -64,10 +64,12 @@ def _build_local_fallback_app(graph):
     return app
 
 
-def _run_local_fallback(graph, port: int) -> None:
+async def _run_local_fallback(graph, port: int) -> None:
     import uvicorn
 
-    uvicorn.run(_build_local_fallback_app(graph), host="0.0.0.0", port=port)
+    config = uvicorn.Config(_build_local_fallback_app(graph), host="0.0.0.0", port=port)
+    server = uvicorn.Server(config)
+    await server.serve()
 
 
 async def _serve() -> None:
@@ -80,7 +82,7 @@ async def _serve() -> None:
         try:
             import langchain_azure_ai.agents.hosting  # noqa: F401
         except ImportError:
-            _run_local_fallback(graph, port)
+            await _run_local_fallback(graph, port)
             return
 
         # Task 6 fills this in: instantiate and run the real
