@@ -6,6 +6,8 @@ the routing decision downstream is deterministic and type-safe.
 
 from __future__ import annotations
 
+from typing import cast
+
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -44,13 +46,16 @@ async def agent2_evaluate_sufficiency(
 ) -> dict:
     structured_llm = llm.with_structured_output(SufficiencyVerdict)
 
-    verdict: SufficiencyVerdict = await structured_llm.ainvoke(
-        [
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(
-                content=_build_evaluation_prompt(state["task"], state["sharepoint_docs"])
-            ),
-        ]
+    verdict = cast(
+        SufficiencyVerdict,
+        await structured_llm.ainvoke(
+            [
+                SystemMessage(content=SYSTEM_PROMPT),
+                HumanMessage(
+                    content=_build_evaluation_prompt(state["task"], state["sharepoint_docs"])
+                ),
+            ]
+        ),
     )
 
     next_query = (
