@@ -1,0 +1,30 @@
+name: ACR Cleanup
+
+on:
+  # schedule:
+  #   - cron: '0 2 * * *'   # 2 AM UTC nightly
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  cleanup:
+    name: Purge old container images
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Log in with Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Purge untagged and old images (keep last 5 per repo)
+        run: |
+          az acr run \
+            --registry "${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}" \
+            --cmd "acr purge --filter '.*:.*' --untagged --ago 0d --keep 5" \
+            /dev/null

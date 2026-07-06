@@ -7,33 +7,23 @@ as an Azure Container App and later as an Azure AI Foundry Hosted Agent.
 
 Three-agent Corrective-RAG pattern with a bounded retry loop:
 
-```
-        START
-          │
-          ▼
-   ┌─────────────┐
-   │   Agent 1   │  Search SharePoint (via CSOM/PnP .NET sidecar)
-   │  (search)   │
-   └──────┬──────┘
-          │
-          ▼
-   ┌─────────────┐
-   │   Agent 2   │  Sufficiency evaluation (structured output)
-   │ (evaluate)  │
-   └──────┬──────┘
-          │
-   ┌──────┴──────┐
-   │ sufficient? │
-   └──┬───────┬──┘
-      │no     │yes / max_iter reached
-      │       │
-      ▼       ▼
-  Agent 1  ┌─────────────┐
-  (loop)   │   Agent 3   │  Systematize + verify sources
-           │ (finalize)  │
-           └──────┬──────┘
-                  │
-                 END
+```mermaid
+flowchart TD
+
+    START([START])
+
+    A1([Agent 1<br/>search<br/>Search SharePoint via CSOM/PnP .NET])
+    A2([Agent 2<br/>evaluate<br/>Sufficiency evaluation])
+    DEC{Sufficient?<br/>OR max_iter reached?}
+    LOOP([Agent 1<br/>loop])
+    A3([Agent 3<br/>finalize<br/>Systematize + verify sources])
+
+    END([END])
+
+    START --> A1 --> A2 --> DEC
+    DEC -->|no| LOOP --> A1
+    DEC -->|yes| A3 --> END
+
 ```
 
 ## Key design decisions

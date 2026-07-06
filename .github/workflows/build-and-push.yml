@@ -1,8 +1,7 @@
 name: Build and push to ACR
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 env:
   ACR_NAME: ${{ vars.ACR_NAME }}
