@@ -12,6 +12,7 @@ isn't decided here.
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 from app.schemas.state import AuditState
 
@@ -169,8 +170,9 @@ def _audit_host_server_class():
                     # extract_task_text can't parse (e.g. resolved item refs).
                     task_text = await context.get_input_text()
 
-                result = await self.graph.ainvoke(
-                    initial_state(task_text), config=config
+                result = cast(
+                    AuditState,
+                    await self.graph.ainvoke(initial_state(task_text), config=config),
                 )
                 output_text = build_output_text(result)
 
