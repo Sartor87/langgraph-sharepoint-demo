@@ -1,6 +1,22 @@
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import pytest
 
 from app.responses_adapter import build_output_text, extract_task_text
+
+try:
+    import langchain_azure_ai.agents.hosting  # noqa: F401
+
+    _HAS_AZURE_HOSTING = True
+except Exception:  # pragma: no cover - depends on optional extra
+    _HAS_AZURE_HOSTING = False
+
+requires_hosting = pytest.mark.skipif(
+    not _HAS_AZURE_HOSTING,
+    reason="azure hosting extra (langchain_azure_ai) not installed",
+)
 
 
 def test_extract_task_text_from_plain_string():
@@ -149,3 +165,117 @@ def test_build_output_text_appends_verdict_history_and_sources():
     assert "2. sufficient (confidence: 0.90) — All aspects covered." in output
     assert "Source verification:" in output
     assert "- policy.pdf: verified — Metadata present." in output
+
+
+# ---------------------------------------------------------------------------
+# AuditResponsesHostServer.handle_create integration tests
+#
+# These construct the ResponsesHostServer subclass via `__new__` to bypass the
+# real host's __init__ (which stands up an ASGI host, telemetry, and a store).
+# handle_create only touches `self.graph` and inherited request/context
+# helpers, so setting `_graph` on the bare instance is sufficient. The graph is
+# an AsyncMock returning a canned AuditState — no real LLM or Foundry needed.
+# ---------------------------------------------------------------------------
+
+
+def _make_server(graph):
+    from app.responses_adapter import _audit_host_server_class
+
+    cls = _audit_host_server_class()
+    server = cls.__new__(cls)
+    server._graph = graph
+    return server
+
+
+def _drive(server, request, context):
+    async def _collect():
+        events = []
+        async for event in server.handle_create(request, context, asyncio.Event()):
+            events.append(event)
+        return events
+
+    return asyncio.run(_collect())
+
+
+def _event_types(events):
+    return [getattr(e, "type", None) for e in events]
+
+
+@requires_hosting
+def test_handle_create_runs_graph_and_emits_report():
+    canned = {
+        "final_report": {
+            "summary": "All accounted for.",
+            "findings": ["Policy is current."],
+            "partial_evidence": False,
+        },
+        "partial_evidence": False,
+        "verdict_history": [],
+        "source_verification": [],
+    }
+    graph = AsyncMock()
+    graph.ainvoke = AsyncMock(return_value=canned)
+    server = _make_server(graph)
+
+    request = SimpleNamespace(input="Audit case #4471", previous_response_id=None)
+    context = SimpleNamespace(response_id="resp_abc", conversation_id=None)
+
+    events = _drive(server, request, context)
+
+    # Graph driven once, on a fresh AuditState carrying the extracted task text
+    # and a checkpointer thread id.
+    graph.ainvoke.assert_awaited_once()
+    state_arg = graph.ainvoke.await_args.args[0]
+    assert state_arg["task"] == "Audit case #4471"
+    thread_id = graph.ainvoke.await_args.kwargs["config"]["configurable"]["thread_id"]
+    assert thread_id
+
+    types = _event_types(events)
+    assert types[0] == "response.created"
+    assert types[-1] == "response.completed"
+
+    # The full report is delivered as a single output_text delta.
+    deltas = [
+        getattr(e, "delta", None)
+        for e in events
+        if getattr(e, "type", None) == "response.output_text.delta"
+    ]
+    assert deltas == [build_output_text(canned)]
+
+
+@requires_hosting
+def test_handle_create_threads_previous_response_id():
+    graph = AsyncMock()
+    graph.ainvoke = AsyncMock(
+        return_value={
+            "final_report": None,
+            "partial_evidence": False,
+            "verdict_history": [],
+            "source_verification": [],
+        }
+    )
+    server = _make_server(graph)
+
+    request = SimpleNamespace(input="follow-up", previous_response_id="resp_prev")
+    context = SimpleNamespace(response_id="resp_new", conversation_id=None)
+
+    _drive(server, request, context)
+
+    thread_id = graph.ainvoke.await_args.kwargs["config"]["configurable"]["thread_id"]
+    assert "resp_prev" in thread_id
+
+
+@requires_hosting
+def test_handle_create_emits_failed_on_graph_error():
+    graph = AsyncMock()
+    graph.ainvoke = AsyncMock(side_effect=RuntimeError("sharepoint sidecar down"))
+    server = _make_server(graph)
+
+    request = SimpleNamespace(input="Audit case #4471", previous_response_id=None)
+    context = SimpleNamespace(response_id="resp_err", conversation_id=None)
+
+    events = _drive(server, request, context)
+
+    types = _event_types(events)
+    assert "response.failed" in types
+    assert "response.completed" not in types

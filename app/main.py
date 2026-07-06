@@ -85,14 +85,15 @@ async def _serve() -> None:
             await _run_local_fallback(graph, port)
             return
 
-        # Task 6 fills this in: instantiate and run the real
-        # AuditResponsesHostServer(graph) here, once the installed package's
-        # exact async-compatible entrypoint (or restructuring needed to avoid
-        # nested event loops) has been confirmed.
-        raise NotImplementedError(
-            "Foundry Responses hosting is not wired up yet — see Task 6 of "
-            "docs/superpowers/plans/2026-07-06-foundry-hosted-agent.md"
-        )
+        # ResponsesHostServer.run_async() awaits hypercorn.serve directly (no
+        # nested asyncio.run), so it is safe to await here — inside the
+        # already-running loop and the build_checkpointer() `async with` block,
+        # which keeps the checkpointer's connection pool open for the server's
+        # lifetime.
+        from app.responses_adapter import build_audit_host_server
+
+        server = build_audit_host_server(graph)
+        await server.run_async(host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":
