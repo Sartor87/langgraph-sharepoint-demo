@@ -1,38 +1,22 @@
 """
 SharePoint search tool used by Agent 1.
 
-INTEGRATION NOTE
------------------
-Actual document extraction is implemented with CSOM via the PnP Framework,
-which is a .NET-only library. This Python process does NOT talk to SharePoint
-directly. Instead, it calls a small .NET sidecar/service (planned, not yet
-scaffolded here — e.g. `sharepoint-csom-service/`) over HTTP.
+Two interchangeable backends, both implementing the same HTTP contract
+(POST {base_url}/search -> {"documents": [...]})  — selected via the
+`backend` parameter, defaulting from SHAREPOINT_TOOL_BACKEND (not an LLM
+tool-calling decision; app/nodes/agent1_search.py calls this function
+directly and never passes `backend`, so it always gets the env-var
+default):
 
-Expected sidecar contract (subject to change once the .NET service exists):
+  "azure_function" (default) — sharepoint-csom-service/, a real C# Azure
+      Function using PnP Core SDK, authenticated via Managed Identity.
+  "python" — the original planned .NET CSOM/PnP Framework sidecar. Kept as
+      an "explore" option; still unimplemented (SHAREPOINT_SERVICE_URL
+      unset raises NotImplementedError, same as before this change).
 
-    POST {SHAREPOINT_SERVICE_URL}/search
-    {
-        "query": "string",
-        "site_url": "string",
-        "max_results": 20
-    }
-    ->
-    {
-        "documents": [
-            {
-                "doc_id": "string",
-                "title": "string",
-                "url": "string",
-                "content_snippet": "string",
-                "last_modified": "iso8601",
-                "library": "string",
-                "metadata": {}
-            }
-        ]
-    }
-
-Until the sidecar exists, `search_sharepoint` raises NotImplementedError so
-the gap is loud rather than silently returning empty results.
+Request:  {"query": "string", "site_url": "string", "max_results": 20}
+Response: {"documents": [{"doc_id", "title", "url", "content_snippet",
+                           "last_modified", "library", "metadata"}]}
 """
 
 from __future__ import annotations
@@ -41,30 +25,55 @@ import os
 
 import httpx
 
-SHAREPOINT_SERVICE_URL = os.environ.get("SHAREPOINT_SERVICE_URL")
+_VALID_BACKENDS = ("python", "azure_function")
 
 
-async def search_sharepoint(
-    query: str, site_url: str, max_results: int = 20
-) -> list[dict]:
-    """Call the .NET CSOM/PnP sidecar to search SharePoint.
-
-    Raises:
-        NotImplementedError: if SHAREPOINT_SERVICE_URL is not configured,
-            i.e. the .NET sidecar has not been wired up yet.
-        httpx.HTTPStatusError: on non-2xx response from the sidecar.
-    """
-    if not SHAREPOINT_SERVICE_URL:
-        raise NotImplementedError(
-            "SHAREPOINT_SERVICE_URL is not set. The .NET CSOM/PnP Framework "
-            "sidecar has not been scaffolded/deployed yet — see the module "
-            "docstring for the expected contract."
-        )
-
+async def _post_search(base_url: str, query: str, site_url: str, max_results: int) -> list[dict]:
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
-            f"{SHAREPOINT_SERVICE_URL}/search",
+            f"{base_url}/search",
             json={"query": query, "site_url": site_url, "max_results": max_results},
         )
         response.raise_for_status()
         return response.json()["documents"]
+
+
+async def search_sharepoint(
+    query: str,
+    site_url: str,
+    max_results: int = 20,
+    backend: str | None = None,
+) -> list[dict]:
+    """Search SharePoint via one of two interchangeable backends.
+
+    Raises:
+        ValueError: if `backend` isn't "python" or "azure_function".
+        NotImplementedError: if the selected backend's URL env var isn't set.
+        httpx.HTTPStatusError: on non-2xx response from the backend.
+    """
+    if backend is None:
+        backend = os.environ.get("SHAREPOINT_TOOL_BACKEND", "azure_function")
+
+    if backend not in _VALID_BACKENDS:
+        raise ValueError(
+            f"invalid_backend_name: {backend!r} is not a valid SharePoint tool "
+            f"backend — must be one of {_VALID_BACKENDS}"
+        )
+
+    if backend == "azure_function":
+        function_url = os.environ.get("SHAREPOINT_FUNCTION_URL")
+        if not function_url:
+            raise NotImplementedError(
+                "SHAREPOINT_FUNCTION_URL is not set. The sharepoint-csom-service "
+                "Azure Function has not been deployed yet."
+            )
+        return await _post_search(function_url, query, site_url, max_results)
+
+    service_url = os.environ.get("SHAREPOINT_SERVICE_URL")
+    if not service_url:
+        raise NotImplementedError(
+            "SHAREPOINT_SERVICE_URL is not set. The .NET CSOM/PnP Framework "
+            "sidecar has not been scaffolded/deployed yet — this is the "
+            "'python' backend, kept as an explore option."
+        )
+    return await _post_search(service_url, query, site_url, max_results)
