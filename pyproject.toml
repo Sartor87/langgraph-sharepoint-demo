@@ -12,15 +12,18 @@ dependencies = [
     "python-dotenv>=1.0",
     "uvicorn[standard]>=0.30",
     "fastapi>=0.115",
+    # Agent 4 (Fabric MCP context) is always wired into build_graph(), on every
+    # deploy target — unlike the azure extra's genuinely optional/conditional
+    # deps (Foundry hosting, Postgres checkpointer), this can't be optional.
+    "langchain-mcp-adapters>=0.3.0",
+    "azure-identity>=1.17",
 ]
 
 [project.optional-dependencies]
 azure = [
     "langchain-azure-ai[hosting]>=1.2.4",
-    "azure-identity>=1.17",
     "langgraph-checkpoint-postgres>=2.0.0",
     "psycopg[binary,pool]>=3.2",
-    "langchain-mcp-adapters>=0.3.0",
 ]
 dev = [
     "pytest>=8.0",

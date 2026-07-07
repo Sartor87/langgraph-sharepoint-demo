@@ -9,7 +9,7 @@ venv/
 dist/
 build/
 .superpowers
-**/docs/superpowers/*
+**/.structurizr/*
 
 # Terraform
 **/.terraform/*
@@ -27,3 +27,4 @@ override.tf.json
 .terraformrc
 terraform.rc
 .claude/settings.json
+Architecture/workspace.json

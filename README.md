@@ -42,10 +42,14 @@ flowchart TD
   state — required for EU AI Act Annex III traceability.
 - **SharePoint access**: Agent 1 does NOT call SharePoint directly from Python.
   The default backend is `sharepoint-csom-service/`, a C# Azure Function using
-  PnP Core SDK's search API with Managed Identity auth. A second,
-  config-selectable backend (`SHAREPOINT_TOOL_BACKEND=python`) targets an
-  unimplemented .NET CSOM/PnP Framework sidecar, kept as an "explore" option.
-  See `app/tools/sharepoint_tool.py` for the routing logic and
+  PnP Core SDK with Managed Identity auth, exposing two operations:
+  `search_sharepoint()` (`POST /search`, full-text search) and
+  `find_sharepoint_files()` (`POST /files/find`, library + filename-pattern
+  lookup via `IFolder.FindFilesAsync`). A second, config-selectable backend
+  (`SHAREPOINT_TOOL_BACKEND=python`) targets an unimplemented .NET CSOM/PnP
+  Framework sidecar, kept as an "explore" option — same two-operation
+  contract, both currently unimplemented on that path. See
+  `app/tools/sharepoint_tool.py` for the routing logic and
   `sharepoint-csom-service/README.md` for the Function's own docs.
 - **Fabric MCP context (Agent 4)**: unlike Agents 1-3 (fixed deterministic
   function calls), Agent 4 is a real LLM tool-calling step — it connects to
@@ -53,7 +57,11 @@ flowchart TD
   Managed-Identity-authenticated) for additional read-only context, running
   in parallel with Agent 1 on every retry-loop iteration. Restricted to a
   fixed read-only tool allowlist (no create/update/delete/role operations)
-  as a deliberate compliance boundary — see `app/nodes/agent4_fabric_context.py`.
+  as a deliberate compliance boundary. Fails open: any Fabric MCP error
+  (network, auth, protocol) degrades to a `fabric_context` entry carrying
+  the error instead of aborting the whole audit run, since Agent 4 only
+  supplements Agent 1's SharePoint search — see
+  `app/nodes/agent4_fabric_context.py`.
 - **Hosting adapter**: `app/main.py`'s `_serve()` tries to import
   `langchain_azure_ai.agents.hosting`; if present, it serves via
   `AuditResponsesHostServer` (`app/responses_adapter.py`), a `ResponsesHostServer`
@@ -84,16 +92,21 @@ langgraph-sharepoint-demo/
 │   ├── nodes/
 │   │   ├── agent1_search.py
 │   │   ├── agent2_evaluate.py
-│   │   └── agent3_finalize.py
+│   │   ├── agent3_finalize.py
+│   │   └── agent4_fabric_context.py   # Fabric MCP context, parallel with Agent 1
 │   └── tools/
-│       └── sharepoint_tool.py   # Stub — calls out to .NET CSOM/PnP service
-├── tests/
-│   ├── test_graph_routing.py
-│   └── test_state_schema.py
+│       ├── sharepoint_tool.py   # search_sharepoint()/find_sharepoint_files(), backend-selectable
+│       └── fabric_auth.py       # FabricManagedIdentityAuth (httpx.Auth bridge)
+├── tests/                       # 8 files — one per app/ module above, plus test_graph_routing.py
+│                                 #   and test_state_schema.py
 ├── docker/
 │   └── Dockerfile
+├── sharepoint-csom-service/      # C# Azure Function — PnP Core SDK SharePoint search/files
+├── foundry/                      # azd Foundry Hosted Agent deploy config (agent.yaml)
+├── terraform/                    # ACI + App Gateway IaC, plus Foundry AI Services import
 ├── .github/workflows/
-│   └── build-and-push.yml       # ACR build placeholder
+│   ├── build-and-push.yml       # ACR build (manual dispatch)
+│   └── acr-cleanup.yml          # Scheduled + manual ACR image purge
 ├── .env.example
 ├── pyproject.toml
 └── README.md
