@@ -13,3 +13,7 @@ output "postgres_fqdn" {
 output "acr_login_server" {
   value = module.acr.login_server
 }
+
+output "sharepoint_function_hostname" {
+  value = module.sharepoint_function.default_hostname
+}

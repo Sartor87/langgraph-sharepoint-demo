@@ -19,6 +19,13 @@ resource "azurerm_user_assigned_identity" "audit_agent" {
   tags                = local.tags
 }
 
+resource "azurerm_user_assigned_identity" "sharepoint_function" {
+  name                = "id-sharepoint-function-dev"
+  resource_group_name = module.resource_group.name
+  location            = module.resource_group.location
+  tags                = local.tags
+}
+
 module "networking" {
   source              = "../../modules/networking"
   resource_group_name = module.resource_group.name
@@ -107,6 +114,16 @@ module "jumpbox" {
   ssh_public_key      = var.jumpbox_ssh_public_key
 }
 
+module "sharepoint_function" {
+  source                = "../../modules/function-app"
+  name                  = "func-sharepoint-search-dev"
+  resource_group_name   = module.resource_group.name
+  location              = module.resource_group.location
+  tags                  = local.tags
+  identity_id           = azurerm_user_assigned_identity.sharepoint_function.id
+  identity_principal_id = azurerm_user_assigned_identity.sharepoint_function.principal_id
+}
+
 module "audit_agent" {
   source              = "../../modules/container-group"
   name                = "aci-audit-agent-dev"
@@ -121,6 +138,8 @@ module "audit_agent" {
   environment_variables = {
     AZURE_OPENAI_ENDPOINT                 = var.azure_openai_endpoint
     AZURE_OPENAI_DEPLOYMENT               = var.azure_openai_deployment
+    SHAREPOINT_TOOL_BACKEND               = "azure_function"
+    SHAREPOINT_FUNCTION_URL               = "https://${module.sharepoint_function.default_hostname}"
     SHAREPOINT_SERVICE_URL                = var.sharepoint_service_url
     SHAREPOINT_SITE_URL                   = var.sharepoint_site_url
     DB_HOST                               = module.postgres.fqdn
