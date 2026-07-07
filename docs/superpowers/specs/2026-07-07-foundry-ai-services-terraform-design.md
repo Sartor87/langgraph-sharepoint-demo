@@ -5,16 +5,23 @@ Status: Approved (pending spec self-review)
 
 ## Context
 
-A Foundry AI Services account ("langchain-orchestrator-resource", `kind =
-"AIServices"`) and a Foundry project under it ("langchain-orchestrator")
-already exist in Azure, created outside Terraform, in resource group
-`rg-LangChain-Orchestrator` (subscription `69856462-2e0b-402b-bf7b-c9f41b3302a4`,
-region `swedencentral`). The user exported their current config via Azure's
-Terraform export tooling (`Microsoft.AzureTerraform` resource provider /
-`aztfexport`, which requires that provider registered at subscription scope
-— that's what "activate Terraform at Subscription level" referred to; it's
-a one-time prerequisite for the *export* process the user already ran, not
-something this module depends on at apply-time).
+A Foundry AI Services account (`kind = "AIServices"`) and a Foundry project
+under it already exist in Azure, created outside Terraform, in a resource
+group not owned by this repo's other Terraform (region `swedencentral` in
+the example the user shared). The user exported their current config via
+Azure's Terraform export tooling (`Microsoft.AzureTerraform` resource
+provider / `aztfexport`, which requires that provider registered at
+subscription scope — that's what "activate Terraform at Subscription level"
+referred to; it's a one-time prerequisite for the *export* process the user
+already ran, not something this module depends on at apply-time).
+
+**This repo is/will be public — no subscription ID, tenant ID, resource
+group name, or account/project name from the user's real environment
+appears anywhere in this spec, the module, or the root config.** All of
+those are required variables with no defaults (see Architecture), supplied
+only via `TF_VAR_*` env vars or a gitignored `terraform.tfvars`/
+`secrets.auto.tfvars` at apply time — same treatment this repo already
+gives `postgres_admin_password` and friends in `environments/dev`.
 
 This spec brings that existing account+project under this repo's Terraform
 management (via `terraform import`, not re-creation) and connects its
@@ -41,7 +48,7 @@ Out of scope (explicitly deferred):
 - Model deployment resources (`azurerm_cognitive_deployment` or similar) —
   the user confirmed none are needed in this pass; if one exists it stays
   manually managed for now.
-- Managing `rg-LangChain-Orchestrator` itself as a Terraform-owned resource
+- Managing the target resource group itself as a Terraform-owned resource
   — referenced via `data "azurerm_resource_group"` only (see Architecture).
   It may contain other resources unrelated to this project; Terraform must
   never be able to modify or destroy it.
@@ -75,10 +82,12 @@ terraform/environments/foundry/
 ├── backend.tf         # same storage account/container as environments/dev
 │                       #   (stauditagenttfstate / tfstate), key = "foundry.tfstate"
 ├── versions.tf         # provider "azurerm" (~> 4.0), features {}, subscription_id var
-├── variables.tf        # subscription_id, location (default "swedencentral"),
-│                       #   resource_group_name (default "rg-LangChain-Orchestrator"),
-│                       #   account_name (default "langchain-orchestrator-resource"),
-│                       #   project_name (default "langchain-orchestrator")
+├── variables.tf        # subscription_id, resource_group_name, account_name,
+│                       #   project_name — ALL required, no defaults (real
+│                       #   values are environment-specific and never
+│                       #   committed); location has a default of
+│                       #   "swedencentral" since region isn't identifying
+│                       #   on its own, but can be overridden
 ├── main.tf             # data "azurerm_resource_group" "this" (existing RG,
 │                       #   read-only reference — Terraform never creates,
 │                       #   modifies, or destroys this resource group) +
@@ -147,11 +156,16 @@ human after `terraform init` (never automated — same treatment as
 
 ```bash
 terraform import module.foundry_ai_services.azurerm_cognitive_account.this \
-  /subscriptions/<sub-id>/resourceGroups/rg-LangChain-Orchestrator/providers/Microsoft.CognitiveServices/accounts/langchain-orchestrator-resource
+  /subscriptions/<subscription-id>/resourceGroups/<resource-group-name>/providers/Microsoft.CognitiveServices/accounts/<account-name>
 
 terraform import module.foundry_ai_services.azurerm_cognitive_account_project.this \
-  /subscriptions/<sub-id>/resourceGroups/rg-LangChain-Orchestrator/providers/Microsoft.CognitiveServices/accounts/langchain-orchestrator-resource/projects/langchain-orchestrator
+  /subscriptions/<subscription-id>/resourceGroups/<resource-group-name>/providers/Microsoft.CognitiveServices/accounts/<account-name>/projects/<project-name>
 ```
+
+(`terraform/environments/foundry/README.md` will show the operator how to
+substitute their own real values — via `terraform output`-friendly copies of
+the variables they already supplied, e.g. `az cognitiveservices account show
+... --query id -o tsv`, not by hardcoding anything in a tracked file.)
 
 After import, `terraform plan` must show no changes (or only the
 attribute-cleanup deltas listed above, which reflect real drift between the
