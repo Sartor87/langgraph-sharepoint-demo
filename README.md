@@ -1,7 +1,9 @@
 # LangGraph SharePoint Audit Agent
 
-Multi-agent document audit workflow built with LangGraph, targeting deployment
-as an Azure Container App and later as an Azure AI Foundry Hosted Agent.
+Multi-agent document audit workflow built with LangGraph, deployed to two
+parallel targets from the same container image: Azure Container Instances
+(ACI) + Application Gateway via Terraform, and an Azure AI Foundry Hosted
+Agent via `azd`.
 
 ## Architecture
 
@@ -39,20 +41,31 @@ flowchart TD
   small .NET sidecar/service (`sharepoint-csom-service/`, not yet scaffolded)
   that Agent 1 calls over HTTP. See `app/tools/sharepoint_tool.py` for the
   Python-side interface stub and the integration note at the top of that file.
-- **Hosting adapter**: `app/main.py` wraps the compiled graph with
-  `langchain_azure_ai.agents.hosting` so the same container image runs
-  unmodified on Azure Container Apps today and as a Foundry Hosted Agent later.
-- **Checkpointer**: defaults to in-memory `MemorySaver` for local dev; swap
-  for `AsyncPostgresSaver` (or equivalent) before any real deployment — see
-  `app/graph.py`.
+- **Hosting adapter**: `app/main.py`'s `_serve()` tries to import
+  `langchain_azure_ai.agents.hosting`; if present, it serves via
+  `AuditResponsesHostServer` (`app/responses_adapter.py`), a `ResponsesHostServer`
+  subclass that overrides schema validation and `handle_create` to drive
+  `AuditState` (which has no `messages` field) instead of the chat-shaped state
+  the base class expects. If the azure hosting extra isn't installed, it falls
+  back to a minimal local FastAPI app (`/invoke`, `/health`). The same image and
+  the same code path serve both the ACI and Foundry deploy targets — it's the
+  `FOUNDRY_PROJECT_ENDPOINT` env var at runtime, not which package is
+  installed, that distinguishes them (see `app/graph.py`'s `_build_llm()`).
+- **Checkpointer**: `app/checkpointer.py`'s `build_checkpointer()` branches on
+  `FOUNDRY_PROJECT_ENDPOINT` — `AsyncPostgresSaver` against the private-VNet
+  Postgres Terraform provisions for the ACI path (durable), or in-memory
+  `MemorySaver` for the Foundry path, since Foundry's managed runtime can't
+  reach that private-VNet-only Postgres (non-durable; see Open items below).
 
 ## Project layout
 
 ```
 langgraph-sharepoint-demo/
 ├── app/
-│   ├── main.py                  # FastAPI / hosting adapter entrypoint
-│   ├── graph.py                 # StateGraph assembly, routing, checkpointer
+│   ├── main.py                  # Entrypoint — Foundry Responses host or local FastAPI fallback
+│   ├── graph.py                 # StateGraph assembly, routing, LLM selection
+│   ├── checkpointer.py          # build_checkpointer() — Postgres (ACI) vs MemorySaver (Foundry)
+│   ├── responses_adapter.py     # AuditState <-> Foundry Responses protocol mapping
 │   ├── schemas/
 │   │   └── state.py             # AuditState, SufficiencyVerdict, enums
 │   ├── nodes/
@@ -78,16 +91,22 @@ langgraph-sharepoint-demo/
 ```bash
 pip install -e ".[dev]"
 cp .env.example .env  # fill in Azure OpenAI + SharePoint service endpoint
-uvicorn app.main:app --reload --port 8000
+python -m app.main
 ```
 
-Test locally via the Responses protocol:
+`pip install -e ".[dev]"` does not pull in the `azure` extra, so this runs the
+local FastAPI fallback (`/invoke`, `/health`) rather than the Responses
+protocol — test it with:
 
 ```bash
-curl -X POST http://localhost:8000/responses \
+curl -X POST http://localhost:8000/invoke \
   -H "Content-Type: application/json" \
-  -d '{"input": {"messages": [{"role": "user", "content": "Audit retention policy docs for case #4471"}]}}'
+  -d '{"task": "Audit retention policy docs for case #4471"}'
 ```
+
+To test the real Responses protocol locally instead, install the `azure`
+extra (`pip install -e ".[azure]"`) — see `foundry/README.md`'s "Local test"
+section for the corresponding `curl` example against `/responses`.
 
 ## Deployment path
 
@@ -99,11 +118,13 @@ curl -X POST http://localhost:8000/responses \
    public ingress), with a private-VNet Postgres-backed checkpointer (no
    public endpoint) and secrets in Key Vault. A jumpbox VM in the same VNet
    is the only way to reach Postgres directly (see below).
-2. **Azure AI Foundry Hosted Agent** (future migration, currently preview) —
-   same image, redeploy via `az cognitiveservices agent` / `azd ai agent
-   init`, swap `AZURE_OPENAI_ENDPOINT` env var for the Foundry-injected
-   `FOUNDRY_PROJECT_ENDPOINT`, and move SharePoint access behind the Foundry
-   Toolbox MCP endpoint instead of a direct service call.
+2. **Azure AI Foundry Hosted Agent** (second, parallel deploy target,
+   currently preview) — same container image as the ACI path above; Foundry
+   injects `FOUNDRY_PROJECT_ENDPOINT`/`FOUNDRY_MODEL_NAME` at runtime, which
+   `app/graph.py`'s `_build_llm()` and `app/checkpointer.py`'s
+   `build_checkpointer()` both branch on. Deploy via `azd` — see
+   `foundry/README.md`. This path uses `MemorySaver` (non-durable) since
+   Foundry's runtime can't reach the ACI path's private-VNet Postgres.
 
 ## Connecting to Postgres (jumpbox tunnel)
 
@@ -131,8 +152,13 @@ The jumpbox only accepts SSH (port 22) from the IP set in `local_ip` — see
 ## Open items / TODO
 
 - [ ] Scaffold the .NET CSOM/PnP Framework sidecar service that Agent 1 calls.
-- [ ] Wire `AsyncPostgresSaver` (or Cosmos DB checkpointer) for durable state.
 - [ ] Add `requires_human_review` as an explicit graph branch (interrupt) once
       the human-in-the-loop reviewer flow is defined.
 - [ ] Wrap SharePoint tool as an MCP server for the future Foundry Toolbox
       migration.
+- [ ] Wire human-in-the-loop (`interrupt()`) once the `requires_human_review`
+      graph branch exists — the Responses protocol already supports resuming
+      via `function_call_output`/`mcp_approval_response`.
+- [ ] Wire a Cosmos DB checkpointer for the Foundry Hosted Agent path
+      (currently `MemorySaver`, non-durable — Postgres isn't reachable from
+      Foundry's runtime since it's private-VNet-only).
