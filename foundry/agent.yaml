@@ -1,0 +1,19 @@
+# Schema verified against the real `azd ai agent init` scaffold output
+# (azd 1.23.13 + azure.ai.agents extension 0.1.20-preview), run in a scratch
+# directory outside this repo — see .superpowers/sdd/task-9-report.md for the
+# exact commands and raw output. Fields below (`kind`, `name`, `protocols`,
+# `environment_variables`) are the real generated field names; nothing here
+# was hand-guessed from documentation alone.
+kind: hosted
+name: audit-agent
+protocols:
+    - protocol: responses
+      version: v1
+
+# No `environment_variables` block: this app only reads FOUNDRY_PROJECT_ENDPOINT
+# and FOUNDRY_MODEL_NAME (see app/graph.py's _build_llm/_build_foundry_llm) on
+# the Foundry Hosted Agent path, and both are injected automatically by the
+# Foundry runtime — they must NOT be set here (the scaffold's default
+# environment_variables entries — AZURE_OPENAI_ENDPOINT, AZURE_AI_PROJECT_ENDPOINT,
+# AZURE_AI_MODEL_DEPLOYMENT_NAME — are generic azd starter-template placeholders
+# this app doesn't use, and were removed rather than carried over).
