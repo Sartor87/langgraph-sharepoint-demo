@@ -37,10 +37,12 @@ flowchart TD
 - **Audit trail**: every Agent 2 verdict is appended to `verdict_history` in
   state — required for EU AI Act Annex III traceability.
 - **SharePoint access**: Agent 1 does NOT call SharePoint directly from Python.
-  CSOM via PnP Framework is .NET-only, so the actual extraction happens in a
-  small .NET sidecar/service (`sharepoint-csom-service/`, not yet scaffolded)
-  that Agent 1 calls over HTTP. See `app/tools/sharepoint_tool.py` for the
-  Python-side interface stub and the integration note at the top of that file.
+  The default backend is `sharepoint-csom-service/`, a C# Azure Function using
+  PnP Core SDK's search API with Managed Identity auth. A second,
+  config-selectable backend (`SHAREPOINT_TOOL_BACKEND=python`) targets an
+  unimplemented .NET CSOM/PnP Framework sidecar, kept as an "explore" option.
+  See `app/tools/sharepoint_tool.py` for the routing logic and
+  `sharepoint-csom-service/README.md` for the Function's own docs.
 - **Hosting adapter**: `app/main.py`'s `_serve()` tries to import
   `langchain_azure_ai.agents.hosting`; if present, it serves via
   `AuditResponsesHostServer` (`app/responses_adapter.py`), a `ResponsesHostServer`
