@@ -111,6 +111,9 @@ class AuditState(TypedDict):
     requires_human_review: bool
     verdict_history: Annotated[list[dict], _append]
 
+    # Agent 4 output (Fabric MCP context, gathered in parallel with Agent 1)
+    fabric_context: Annotated[list[dict], _append]
+
     # Agent 3 output
     source_verification: list[dict]
     final_report: dict | None

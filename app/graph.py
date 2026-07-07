@@ -20,6 +20,7 @@ from langgraph.graph import END, START, StateGraph
 from app.nodes.agent1_search import agent1_search_sharepoint
 from app.nodes.agent2_evaluate import agent2_evaluate_sufficiency
 from app.nodes.agent3_finalize import agent3_systematize_and_verify
+from app.nodes.agent4_fabric_context import agent4_fabric_context
 from app.schemas.state import AuditState
 
 DEFAULT_MAX_ITERATIONS = 3
@@ -54,13 +55,14 @@ def _build_foundry_llm(foundry_endpoint: str) -> ChatOpenAI:
     )
 
 
-def route_after_evaluation(state: AuditState) -> str:
-    """Loop back to Agent 1 unless sufficient or the iteration budget is spent."""
+def route_after_evaluation(state: AuditState) -> str | list[str]:
+    """Loop back to Agent 1 + Agent 4 (parallel) unless sufficient or the
+    iteration budget is spent."""
     if state["sufficiency_verdict"] == "sufficient":
         return "agent3"
     if state["iteration"] >= state["max_iterations"]:
         return "agent3"  # escalate with partial_evidence flag, not infinite loop
-    return "agent1"
+    return ["agent1", "agent4"]
 
 
 def build_graph(checkpointer=None):
@@ -70,13 +72,16 @@ def build_graph(checkpointer=None):
     builder.add_node("agent1", agent1_search_sharepoint)
     builder.add_node("agent2", partial(agent2_evaluate_sufficiency, llm=llm))
     builder.add_node("agent3", partial(agent3_systematize_and_verify, llm=llm))
+    builder.add_node("agent4", partial(agent4_fabric_context, llm=llm))
 
     builder.add_edge(START, "agent1")
+    builder.add_edge(START, "agent4")
     builder.add_edge("agent1", "agent2")
+    builder.add_edge("agent4", "agent2")
     builder.add_conditional_edges(
         "agent2",
         route_after_evaluation,
-        {"agent1": "agent1", "agent3": "agent3"},
+        {"agent1": "agent1", "agent4": "agent4", "agent3": "agent3"},
     )
     builder.add_edge("agent3", END)
 
@@ -94,6 +99,7 @@ def initial_state(task: str, query: str | None = None) -> AuditState:
         sufficiency_verdict=None,
         requires_human_review=False,
         verdict_history=[],
+        fabric_context=[],
         source_verification=[],
         final_report=None,
         partial_evidence=False,
