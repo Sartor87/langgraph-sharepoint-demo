@@ -50,6 +50,11 @@ empty string isn't a valid value). Any other diff means a variable default
 doesn't match the real resource yet — fix the variable value, don't apply
 blindly.
 
+This root only exposes the five identifying variables above. Drift on
+anything else (SKU, network access, auth, tags) means editing the defaults
+directly in `terraform/modules/foundry-ai-services/variables.tf`, not
+something settable from this root.
+
 ```bash
 terraform output -raw foundry_project_endpoint
 ```
