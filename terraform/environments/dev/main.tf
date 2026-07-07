@@ -125,6 +125,7 @@ module "audit_agent" {
     SHAREPOINT_SITE_URL                   = var.sharepoint_site_url
     DB_HOST                               = module.postgres.fqdn
     DB_NAME                               = module.postgres.database_name
+    DB_USER                               = "auditagent"
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.this.connection_string
   }
 
