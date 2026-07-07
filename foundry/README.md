@@ -13,10 +13,17 @@ Second, parallel deploy target alongside the ACI + Terraform path
 ## Local test
 
 ```bash
-export FOUNDRY_PROJECT_ENDPOINT="https://<resource>.services.ai.azure.com/api/projects/<project>"
+cd terraform/environments/foundry
+export FOUNDRY_PROJECT_ENDPOINT=$(terraform output -raw foundry_project_endpoint)
+cd -
+
 export FOUNDRY_MODEL_NAME="gpt-4.1"
 python -m app.main
 ```
+
+(See `terraform/environments/foundry/README.md` if you haven't imported the
+Foundry account/project into Terraform yet — until then, set
+`FOUNDRY_PROJECT_ENDPOINT` manually from the Azure portal instead.)
 
 In another terminal:
 
