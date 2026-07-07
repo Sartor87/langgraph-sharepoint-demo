@@ -8,6 +8,8 @@ venv/
 .ruff_cache/
 dist/
 build/
+.superpowers
+**/docs/superpowers/*
 
 # Terraform
 **/.terraform/*
