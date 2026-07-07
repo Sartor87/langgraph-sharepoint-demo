@@ -20,6 +20,7 @@ azure = [
     "azure-identity>=1.17",
     "langgraph-checkpoint-postgres>=2.0.0",
     "psycopg[binary,pool]>=3.2",
+    "langchain-mcp-adapters>=0.3.0",
 ]
 dev = [
     "pytest>=8.0",
