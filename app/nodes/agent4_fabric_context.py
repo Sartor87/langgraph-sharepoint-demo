@@ -16,7 +16,6 @@ permissions.
 
 from __future__ import annotations
 
-import inspect
 import os
 
 from langchain_core.language_models import BaseChatModel
@@ -80,12 +79,6 @@ async def agent4_fabric_context(state: AuditState, llm: BaseChatModel) -> dict:
 
     tools_by_name = {t.name: t for t in tools}
     llm_with_tools = llm.bind_tools(tools)
-    # BaseChatModel.bind_tools is synchronous in the real API (returns a
-    # Runnable directly). Some test doubles (a bare AsyncMock() without a
-    # BaseChatModel spec) auto-create .bind_tools as an AsyncMock too, so
-    # calling it returns a coroutine; normalize that case here.
-    if inspect.isawaitable(llm_with_tools):
-        llm_with_tools = await llm_with_tools
 
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),

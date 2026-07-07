@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from langchain_core.language_models import BaseChatModel
 
 from app.nodes.agent4_fabric_context import (
     READ_ONLY_TOOL_NAMES,
@@ -37,7 +38,7 @@ def test_read_only_tool_names_has_no_mutating_operations():
 async def test_agent4_fabric_context_no_tool_calls_returns_direct_answer():
     fake_tools = [_fake_tool("search_catalog")]
 
-    llm = AsyncMock()
+    llm = AsyncMock(spec=BaseChatModel)
     llm_with_tools = AsyncMock()
     llm.bind_tools.return_value = llm_with_tools
     llm_with_tools.ainvoke.return_value = SimpleNamespace(
@@ -60,7 +61,7 @@ async def test_agent4_fabric_context_no_tool_calls_returns_direct_answer():
 async def test_agent4_fabric_context_executes_tool_calls_and_summarizes():
     fake_tools = [_fake_tool("search_catalog")]
 
-    llm = AsyncMock()
+    llm = AsyncMock(spec=BaseChatModel)
     llm_with_tools = AsyncMock()
     llm.bind_tools.return_value = llm_with_tools
     llm_with_tools.ainvoke.return_value = SimpleNamespace(
