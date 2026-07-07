@@ -1,5 +1,7 @@
 resource "azurerm_storage_account" "this" {
-  name                     = "st${replace(var.name, "-", "")}"
+  # Storage account names are capped at 24 lowercase-alphanumeric chars;
+  # truncate rather than fail for longer function-app names.
+  name                     = substr("st${replace(var.name, "-", "")}", 0, 24)
   resource_group_name      = var.resource_group_name
   location                 = var.location
   account_tier             = "Standard"
