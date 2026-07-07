@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "sharepoint_csom_service": {
+    "SharePointSearchFunction": {
       "commandName": "Project",
       "commandLineArgs": "--port 7012",
       "launchBrowser": false
