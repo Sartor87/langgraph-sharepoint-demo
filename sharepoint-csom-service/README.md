@@ -34,21 +34,42 @@ curl -X POST http://localhost:7071/search \
 
 ## Prerequisites for a real deployment
 
-- The Function App's Managed Identity must be granted a SharePoint API
-  permission (`Sites.Selected` or `Sites.Read.All`) — a manual Entra admin
-  consent step, not automated here.
-- Infrastructure (the Function App resource itself, Managed Identity
-  assignment) is a separate, later piece of work — this repo currently
-  only has the function's code.
-- The HTTP trigger declares `AuthorizationLevel.Function`, so once this
-  Function is actually deployed, every inbound call must present a
-  function key (`x-functions-key` header or `?code=` query param) or it
-  will 401. `app/tools/sharepoint_tool.py`'s `search_sharepoint()` does
-  not currently send one — wiring a `SHAREPOINT_FUNCTION_KEY` env var
-  through as an `x-functions-key` header is part of this deferred
-  deployment/infra work, not yet implemented. This is latent today only
-  because both tool backends raise `NotImplementedError` before any HTTP
-  call is made.
+Once `terraform apply` has created the Function App and its dedicated
+identity (`id-sharepoint-function-dev`), grant that identity SharePoint
+access — this is a two-part manual process with no Terraform equivalent for
+the second part:
+
+1. **Grant the Microsoft Graph `Sites.Selected` application permission** to
+   the identity's service principal (Azure Portal → Microsoft Entra ID →
+   Enterprise Applications → find `id-sharepoint-function-dev` → API
+   permissions → Add a permission → Microsoft Graph → Application
+   permissions → `Sites.Selected` → Grant admin consent). This can
+   technically be scripted via the `azuread` Terraform provider, but is done
+   manually here to keep the whole grant in one place (see step 2).
+
+2. **Scope that permission to the specific SharePoint site** the Function
+   should access — there is no Terraform/ARM resource for this at all; it's
+   a Microsoft Graph API call. The standard tool is PnP PowerShell:
+
+   ```powershell
+   Install-Module -Name PnP.PowerShell -Scope CurrentUser
+   Connect-PnPOnline -Url "https://<tenant>.sharepoint.com/sites/<site>" -Interactive
+
+   Grant-PnPAzureADAppSitePermission `
+     -AppId "<the identity's client/application ID, from the Enterprise Application's Overview page>" `
+     -DisplayName "id-sharepoint-function-dev" `
+     -Site "https://<tenant>.sharepoint.com/sites/<site>" `
+     -Permissions Read
+   ```
+
+   Use `-Permissions Write` instead (or in addition) if the Function will
+   ever need to write back to SharePoint — today it only searches and finds
+   files, so `Read` is sufficient.
+
+- Infrastructure (the Function App resource itself, its Storage Account, and
+  its dedicated Managed Identity) is provisioned by
+  `terraform/environments/dev` (`module.sharepoint_function`) — see that
+  module's Terraform for what's created.
 
 ## AWS Lambda alternative
 
