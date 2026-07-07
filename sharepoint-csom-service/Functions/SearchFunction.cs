@@ -74,6 +74,10 @@ public class SearchFunction
                 ContentSnippet = row.TryGetValue("HitHighlightedSummary", out var s) ? s?.ToString() ?? "" : "",
                 LastModified = row.TryGetValue("LastModifiedTime", out var lm) ? lm?.ToString() ?? "" : "",
                 Library = ExtractLibraryFromPath(path),
+                // Metadata is an intentionally opaque bag: its dictionary keys keep the raw
+                // SharePoint search row key casing (e.g. "UniqueId") rather than the
+                // SnakeCaseLower policy applied to top-level JSON property names, since
+                // PropertyNamingPolicy doesn't affect Dictionary<string, object> keys.
                 Metadata = row.ToDictionary(kv => kv.Key, kv => (object?)kv.Value),
             });
         }

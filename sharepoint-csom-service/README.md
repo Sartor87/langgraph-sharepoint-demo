@@ -22,6 +22,10 @@ func start
 (not `/api/search` — `host.json` sets `routePrefix` to empty for contract
 parity with the Python-side stub).
 
+Note: if you instead run/debug via `dotnet run` or F5 (see
+`Properties/launchSettings.json`), the function serves on port `7012`
+instead of `7071` — adjust the URL below accordingly.
+
 ```bash
 curl -X POST http://localhost:7071/search \
   -H "Content-Type: application/json" \
@@ -36,6 +40,15 @@ curl -X POST http://localhost:7071/search \
 - Infrastructure (the Function App resource itself, Managed Identity
   assignment) is a separate, later piece of work — this repo currently
   only has the function's code.
+- The HTTP trigger declares `AuthorizationLevel.Function`, so once this
+  Function is actually deployed, every inbound call must present a
+  function key (`x-functions-key` header or `?code=` query param) or it
+  will 401. `app/tools/sharepoint_tool.py`'s `search_sharepoint()` does
+  not currently send one — wiring a `SHAREPOINT_FUNCTION_KEY` env var
+  through as an `x-functions-key` header is part of this deferred
+  deployment/infra work, not yet implemented. This is latent today only
+  because both tool backends raise `NotImplementedError` before any HTTP
+  call is made.
 
 ## AWS Lambda alternative
 
