@@ -72,52 +72,80 @@ async def _build_fabric_tools() -> list:
 
 
 async def agent4_fabric_context(state: AuditState, llm: BaseChatModel) -> dict:
-    tools = await _build_fabric_tools()
+    """Query Fabric's MCP server for additional audit context.
 
-    if not tools:
-        return {"fabric_context": []}
+    Agent 4 only *supplements* the primary SharePoint audit (Agent 1) with
+    extra context; it must never be able to abort the audit run. Agent 4
+    fans in with Agent 1 into Agent 2 in the same LangGraph superstep, so an
+    unhandled exception here would otherwise take down the entire graph run.
+    Any failure while talking to the Fabric MCP server (network error, auth
+    failure, MCP protocol error, etc.) is therefore caught here and turned
+    into a degraded `fabric_context` entry instead of propagating.
+    """
+    try:
+        tools = await _build_fabric_tools()
 
-    tools_by_name = {t.name: t for t in tools}
-    llm_with_tools = llm.bind_tools(tools)
+        if not tools:
+            return {"fabric_context": []}
 
-    messages = [
-        SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(content=state["query"]),
-    ]
-    response = await llm_with_tools.ainvoke(messages)
+        tools_by_name = {t.name: t for t in tools}
+        llm_with_tools = llm.bind_tools(tools)
 
-    if not response.tool_calls:
+        messages = [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=state["query"]),
+        ]
+        response = await llm_with_tools.ainvoke(messages)
+
+        if not response.tool_calls:
+            return {
+                "fabric_context": [
+                    {
+                        "query": state["query"],
+                        "summary": response.content,
+                        "tool_calls": [],
+                    }
+                ]
+            }
+
+        messages.append(response)
+        tool_call_results = []
+        for call in response.tool_calls:
+            tool = tools_by_name.get(call["name"])
+            if tool is None:
+                continue
+            result = await tool.ainvoke(call["args"])
+            tool_call_results.append(
+                {"tool": call["name"], "args": call["args"], "result": str(result)}
+            )
+            messages.append(ToolMessage(content=str(result), tool_call_id=call["id"]))
+
+        summary_response = await llm.ainvoke(
+            messages
+            + [
+                HumanMessage(
+                    content="Summarize what you found, briefly, for an audit context note."
+                )
+            ]
+        )
+
         return {
             "fabric_context": [
                 {
                     "query": state["query"],
-                    "summary": response.content,
-                    "tool_calls": [],
+                    "summary": summary_response.content,
+                    "tool_calls": tool_call_results,
                 }
             ]
         }
-
-    messages.append(response)
-    tool_call_results = []
-    for call in response.tool_calls:
-        tool = tools_by_name.get(call["name"])
-        if tool is None:
-            continue
-        result = await tool.ainvoke(call["args"])
-        tool_call_results.append({"tool": call["name"], "args": call["args"], "result": result})
-        messages.append(ToolMessage(content=str(result), tool_call_id=call["id"]))
-
-    summary_response = await llm.ainvoke(
-        messages
-        + [HumanMessage(content="Summarize what you found, briefly, for an audit context note.")]
-    )
-
-    return {
-        "fabric_context": [
-            {
-                "query": state["query"],
-                "summary": summary_response.content,
-                "tool_calls": tool_call_results,
-            }
-        ]
-    }
+    except Exception as exc:  # broad on purpose: any Fabric MCP failure must degrade, not abort
+        return {
+            "fabric_context": [
+                {
+                    "query": state["query"],
+                    "summary": f"Fabric context unavailable: {exc}",
+                    "tool_calls": [],
+                    "error": str(exc),
+                }
+            ]
+        }

@@ -92,3 +92,48 @@ async def test_agent4_fabric_context_no_tools_available_returns_empty_context():
         result = await agent4_fabric_context({"query": "audit case #123"}, llm=AsyncMock())
 
     assert result == {"fabric_context": []}
+
+
+@pytest.mark.asyncio
+async def test_agent4_fabric_context_degrades_gracefully_on_build_tools_failure():
+    """A Fabric MCP failure (network/auth/protocol error) must never abort the
+    graph run - Agent 4 only supplements the primary SharePoint audit."""
+    with patch(
+        "app.nodes.agent4_fabric_context._build_fabric_tools",
+        new=AsyncMock(side_effect=RuntimeError("Fabric MCP connection refused")),
+    ):
+        result = await agent4_fabric_context({"query": "audit case #123"}, llm=AsyncMock())
+
+    assert len(result["fabric_context"]) == 1
+    entry = result["fabric_context"][0]
+    assert entry["query"] == "audit case #123"
+    assert entry["tool_calls"] == []
+    assert "error" in entry
+    assert "Fabric MCP connection refused" in entry["error"]
+    assert "Fabric context unavailable" in entry["summary"]
+
+
+@pytest.mark.asyncio
+async def test_agent4_fabric_context_degrades_gracefully_on_tool_invoke_failure():
+    """Failures partway through tool execution (e.g. auth expiring mid-call)
+    must also degrade rather than propagate."""
+    fake_tools = [_fake_tool("search_catalog")]
+    fake_tools[0].ainvoke.side_effect = RuntimeError("auth token expired")
+
+    llm = AsyncMock(spec=BaseChatModel)
+    llm_with_tools = AsyncMock()
+    llm.bind_tools.return_value = llm_with_tools
+    llm_with_tools.ainvoke.return_value = SimpleNamespace(
+        content="",
+        tool_calls=[{"name": "search_catalog", "args": {"query": "policy"}, "id": "call-1"}],
+    )
+
+    with patch(
+        "app.nodes.agent4_fabric_context._build_fabric_tools",
+        new=AsyncMock(return_value=fake_tools),
+    ):
+        result = await agent4_fabric_context({"query": "audit case #123"}, llm=llm)
+
+    entry = result["fabric_context"][0]
+    assert "error" in entry
+    assert "auth token expired" in entry["error"]

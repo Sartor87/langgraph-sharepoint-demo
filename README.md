@@ -175,3 +175,12 @@ The jumpbox only accepts SSH (port 22) from the IP set in `local_ip` — see
 - [ ] Wire a Cosmos DB checkpointer for the Foundry Hosted Agent path
       (currently `MemorySaver`, non-durable — Postgres isn't reachable from
       Foundry's runtime since it's private-VNet-only).
+- [ ] Verify `READ_ONLY_TOOL_NAMES` in `app/nodes/agent4_fabric_context.py`
+      against a live Fabric MCP server. It was built from Microsoft's
+      published tool names but hasn't been checked against a real server; if
+      the real server namespaces/prefixes tool names differently,
+      `agent4_fabric_context` will silently return an empty `fabric_context`
+      on every run (no error, since the graceful-degradation only catches
+      exceptions, not "zero tools matched"). Also still needs verification
+      against a real tenant: the Managed Identity's Fabric API permission
+      grant is a manual prerequisite that isn't yet provisioned/verified.
