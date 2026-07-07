@@ -70,6 +70,14 @@ the second part:
   its dedicated Managed Identity) is provisioned by
   `terraform/environments/dev` (`module.sharepoint_function`) — see that
   module's Terraform for what's created.
+- The HTTP trigger declares `AuthorizationLevel.Function`, so once this
+  Function is actually deployed, every inbound call must present a
+  function key (`x-functions-key` header or `?code=` query param) or it
+  will 401. `app/tools/sharepoint_tool.py`'s `search_sharepoint()` does
+  not currently send one — wiring a `SHAREPOINT_FUNCTION_KEY` env var
+  through as an `x-functions-key` header is separate, not-yet-implemented
+  work. This is latent today only because both tool backends raise
+  `NotImplementedError` before any HTTP call is made.
 
 ## AWS Lambda alternative
 
