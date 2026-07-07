@@ -73,6 +73,8 @@ async def _run_local_fallback(graph, port: int) -> None:
 
 
 async def _serve() -> None:
+    # Just picks a sensible default port; the real Foundry/ACI branch points
+    # are _build_llm() and build_checkpointer().
     default_port = "8088" if os.environ.get("FOUNDRY_PROJECT_ENDPOINT") else "8000"
     port = int(os.environ.get("PORT", default_port))
 
@@ -81,6 +83,7 @@ async def _serve() -> None:
 
         try:
             import langchain_azure_ai.agents.hosting  # noqa: F401
+            import azure.ai.agentserver.responses.streaming  # noqa: F401
         except ImportError:
             await _run_local_fallback(graph, port)
             return
