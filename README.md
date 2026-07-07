@@ -15,15 +15,19 @@ flowchart TD
     START([START])
 
     A1([Agent 1<br/>search<br/>Search SharePoint via CSOM/PnP .NET])
+    A4([Agent 4<br/>fabric-context<br/>Query Fabric MCP for read-only context])
     A2([Agent 2<br/>evaluate<br/>Sufficiency evaluation])
     DEC{Sufficient?<br/>OR max_iter reached?}
-    LOOP([Agent 1<br/>loop])
+    LOOP([Agent 1 + Agent 4<br/>loop])
     A3([Agent 3<br/>finalize<br/>Systematize + verify sources])
 
     END([END])
 
-    START --> A1 --> A2 --> DEC
+    START --> A1 --> A2
+    START --> A4 --> A2
+    A2 --> DEC
     DEC -->|no| LOOP --> A1
+    LOOP --> A4
     DEC -->|yes| A3 --> END
 
 ```
@@ -43,6 +47,13 @@ flowchart TD
   unimplemented .NET CSOM/PnP Framework sidecar, kept as an "explore" option.
   See `app/tools/sharepoint_tool.py` for the routing logic and
   `sharepoint-csom-service/README.md` for the Function's own docs.
+- **Fabric MCP context (Agent 4)**: unlike Agents 1-3 (fixed deterministic
+  function calls), Agent 4 is a real LLM tool-calling step — it connects to
+  Microsoft Fabric's remote MCP server (`langchain-mcp-adapters`,
+  Managed-Identity-authenticated) for additional read-only context, running
+  in parallel with Agent 1 on every retry-loop iteration. Restricted to a
+  fixed read-only tool allowlist (no create/update/delete/role operations)
+  as a deliberate compliance boundary — see `app/nodes/agent4_fabric_context.py`.
 - **Hosting adapter**: `app/main.py`'s `_serve()` tries to import
   `langchain_azure_ai.agents.hosting`; if present, it serves via
   `AuditResponsesHostServer` (`app/responses_adapter.py`), a `ResponsesHostServer`
