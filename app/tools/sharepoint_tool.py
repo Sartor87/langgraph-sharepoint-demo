@@ -28,6 +28,41 @@ import httpx
 _VALID_BACKENDS = ("python", "azure_function")
 
 
+def _resolve_backend_url(backend: str | None) -> str:
+    """Resolve `backend` (or its env-var default) to a configured base URL.
+
+    Raises:
+        ValueError: if `backend` isn't "python" or "azure_function".
+        NotImplementedError: if the selected backend's URL env var isn't set.
+    """
+    if backend is None:
+        backend = os.environ.get("SHAREPOINT_TOOL_BACKEND", "azure_function")
+
+    if backend not in _VALID_BACKENDS:
+        raise ValueError(
+            f"invalid_backend_name: {backend!r} is not a valid SharePoint tool "
+            f"backend — must be one of {_VALID_BACKENDS}"
+        )
+
+    if backend == "azure_function":
+        url = os.environ.get("SHAREPOINT_FUNCTION_URL")
+        if not url:
+            raise NotImplementedError(
+                "SHAREPOINT_FUNCTION_URL is not set. The sharepoint-csom-service "
+                "Azure Function has not been deployed yet."
+            )
+        return url
+
+    url = os.environ.get("SHAREPOINT_SERVICE_URL")
+    if not url:
+        raise NotImplementedError(
+            "SHAREPOINT_SERVICE_URL is not set. The .NET CSOM/PnP Framework "
+            "sidecar has not been scaffolded/deployed yet — this is the "
+            "'python' backend, kept as an explore option."
+        )
+    return url
+
+
 async def _post_search(base_url: str, query: str, site_url: str, max_results: int) -> list[dict]:
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
@@ -36,6 +71,18 @@ async def _post_search(base_url: str, query: str, site_url: str, max_results: in
         )
         response.raise_for_status()
         return response.json()["documents"]
+
+
+async def _post_find_files(
+    base_url: str, library: str, file_name_pattern: str, site_url: str
+) -> list[dict]:
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            f"{base_url}/files/find",
+            json={"library": library, "file_name_pattern": file_name_pattern, "site_url": site_url},
+        )
+        response.raise_for_status()
+        return response.json()["files"]
 
 
 async def search_sharepoint(
@@ -51,29 +98,25 @@ async def search_sharepoint(
         NotImplementedError: if the selected backend's URL env var isn't set.
         httpx.HTTPStatusError: on non-2xx response from the backend.
     """
-    if backend is None:
-        backend = os.environ.get("SHAREPOINT_TOOL_BACKEND", "azure_function")
+    base_url = _resolve_backend_url(backend)
+    return await _post_search(base_url, query, site_url, max_results)
 
-    if backend not in _VALID_BACKENDS:
-        raise ValueError(
-            f"invalid_backend_name: {backend!r} is not a valid SharePoint tool "
-            f"backend — must be one of {_VALID_BACKENDS}"
-        )
 
-    if backend == "azure_function":
-        function_url = os.environ.get("SHAREPOINT_FUNCTION_URL")
-        if not function_url:
-            raise NotImplementedError(
-                "SHAREPOINT_FUNCTION_URL is not set. The sharepoint-csom-service "
-                "Azure Function has not been deployed yet."
-            )
-        return await _post_search(function_url, query, site_url, max_results)
+async def find_sharepoint_files(
+    library: str,
+    file_name_pattern: str,
+    site_url: str,
+    backend: str | None = None,
+) -> list[dict]:
+    """Find files in a SharePoint library matching a name pattern (e.g. "*report*").
 
-    service_url = os.environ.get("SHAREPOINT_SERVICE_URL")
-    if not service_url:
-        raise NotImplementedError(
-            "SHAREPOINT_SERVICE_URL is not set. The .NET CSOM/PnP Framework "
-            "sidecar has not been scaffolded/deployed yet — this is the "
-            "'python' backend, kept as an explore option."
-        )
-    return await _post_search(service_url, query, site_url, max_results)
+    Mirrors `search_sharepoint`'s backend-selection semantics exactly — see
+    that function's docstring for the two-backend design.
+
+    Raises:
+        ValueError: if `backend` isn't "python" or "azure_function".
+        NotImplementedError: if the selected backend's URL env var isn't set.
+        httpx.HTTPStatusError: on non-2xx response from the backend.
+    """
+    base_url = _resolve_backend_url(backend)
+    return await _post_find_files(base_url, library, file_name_pattern, site_url)
