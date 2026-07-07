@@ -1,9 +1,10 @@
 """Assembles the SharePoint audit StateGraph.
 
-DEV: uses in-memory MemorySaver as checkpointer.
-PROD TODO: swap for a durable checkpointer (AsyncPostgresSaver, or an Azure
-Cosmos DB-backed implementation) before deploying to ACA/Foundry — in-memory
-state does not survive container restarts or scale-out.
+`build_graph()` takes an optional checkpointer; defaults to in-memory
+`MemorySaver` when none is given (used by tests). Production callers get
+their checkpointer from `app.checkpointer.build_checkpointer()`, which
+branches on deploy target: `AsyncPostgresSaver` for ACI, `MemorySaver` for
+Foundry (its runtime can't reach the private-VNet Postgres ACI uses).
 """
 
 from __future__ import annotations
