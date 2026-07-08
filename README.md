@@ -177,7 +177,6 @@ The jumpbox only accepts SSH (port 22) from the IP set in `local_ip` — see
 
 ## Open items / TODO
 
-- [ ] Scaffold the .NET CSOM/PnP Framework sidecar service that Agent 1 calls.
 - [ ] Add `requires_human_review` as an explicit graph branch (interrupt) once
       the human-in-the-loop reviewer flow is defined.
 - [ ] Wrap SharePoint tool as an MCP server for the future Foundry Toolbox
